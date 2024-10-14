@@ -1,0 +1,91 @@
+// 1D Convolution
+// Implement a kernel that computes a 1D convolution between `a` and `b` and stores it in `out`. Handle the general case.
+
+
+// MY SOLUTION
+@group(0) @binding(0) var<storage, read_write> a : array<f32>;
+@group(0) @binding(1) var<storage, read_write> b : array<f32>;
+@group(0) @binding(2) var<storage, read_write> out : array<f32>;
+
+const wgs = vec3({{workgroupSize}});
+const twg = vec3({{totalWorkgroups}});
+
+var<workgroup> smemA: array<f32, wgs.x * wgs.y * wgs.z + 4>;
+var<workgroup> smemB: array<f32, 4>;
+
+@compute @workgroup_size({{workgroupSize}})
+fn  main(@builtin(local_invocation_id) lid: vec3<u32>,
+         @builtin(global_invocation_id) gid: vec3<u32>) {
+  
+  // copy from global to shared memory
+
+  // copy a (input)
+  let a_i = gid.x;
+  smemA[lid.x] = a[a_i]; // just copy over all elements which we can
+  if (lid.x == wgs.x - 1) { // if thread at the end of workgroup
+    for (var i: u32 = lid.x + 1; i < lid.x + arrayLength(&b); i++) { // go from the end of workgroup till length of conv kernel
+      if (gid.x - lid.x + i < arrayLength(&a)) { // if it makes sense to copy from input array
+        smemA[i] = a[gid.x - lid.x + i]; // do it
+      } else {
+        smemA[i] = 0; // otherwise, assign 0
+      }
+    }
+  }
+  if (gid.x == arrayLength(&a) - 1) {// if thread is at the end of INPUT array
+    for (var i: u32 = lid.x + 1; i < gid.x + arrayLength(&b); i++) {
+      smemA[i] = 0; // populate the end with 0s
+    }
+  }
+  
+  // copy b (convolution kernel) (basic bitch simple code)
+  let b_i = lid.x + lid.y * wgs.x;
+  smemB[lid.x] = b[b_i];
+  workgroupBarrier();
+  
+  // calculate dot product
+  for (var i: u32=lid.x; i < lid.x + arrayLength(&b); i++) { // calculate sum within a single thread
+    out[gid.x] += smemA[i] * smemB[i - lid.x];
+  }
+}
+
+
+
+// THEIR SOLUTION (WORKS FASTER)
+@group(0) @binding(0) var<storage, read_write> a : array<f32>;
+@group(0) @binding(1) var<storage, read_write> b : array<f32>;
+@group(0) @binding(2) var<storage, read_write> out : array<f32>;
+
+const wgs = vec3({{workgroupSize}});
+const twg = vec3({{totalWorkgroups}});
+
+var<workgroup> smemA: array<f32, wgs.x * wgs.y * wgs.z + 4>;
+var<workgroup> smemB: array<f32, 4>;
+
+@compute @workgroup_size({{workgroupSize}})
+fn  main(@builtin(local_invocation_id) lid: vec3<u32>,
+         @builtin(global_invocation_id) gid: vec3<u32>,
+         @builtin(workgroup_id) wid: vec3<u32>
+         ) {
+    // Each workgroup is responsible computes total workgroup size
+    // values of out and caches total workgroup size + 4 values
+    // of a
+    let wgSize: u32 = wgs.x; // assumes wgs.y = wgs.z = 1
+    smemA[lid.x] = a[gid.x]; // copy over every element that we can
+    if (lid.x < arrayLength(&b)) { // SMART PART!!! (if we started new workgroup (lid.x) is smaller than conv kernel length, we are guaranteed to populate the tail with needed data)
+        smemB[lid.x] = b[lid.x]; // as addition, copy over conv kernel not to repeat logic
+        if (wid.x * wgSize + wgSize + lid.x < arrayLength(&a)) { // if it makes sense to copy from array (note how they account for total workgroups (by wid.x * wgSize))
+            smemA[wgSize + lid.x] = 
+                a[wid.x * wgSize + wgSize + lid.x]; // copy from array with the same index (wid.x * wgSize + wgSize + lid.x)
+        } else {
+            smemA[wgSize + lid.x] = 0.0; // set to 0 otherwise
+        }
+    }
+    workgroupBarrier();
+    var sum: f32 = 0.0;
+    for (var i: u32 = 0; i < arrayLength(&b); i += 1) { // calculate sum within a single thread
+        if (gid.x + i < arrayLength(&a)) {
+            sum = sum + smemA[lid.x + i] * smemB[i];
+        }
+    }
+    out[gid.x] = sum;
+}

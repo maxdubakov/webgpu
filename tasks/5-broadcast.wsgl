@@ -1,0 +1,23 @@
+// Broadcast
+// Implement a kernel that adds `a` and `b` and stores it in `out`. Inputs `a` and `b` are vectors. You have more threads than positions.
+
+@group(0) @binding(0) var<storage, read_write> a : array<f32>;
+@group(0) @binding(1) var<storage, read_write> b : array<f32>;
+@group(0) @binding(2) var<storage, read_write> out : array<f32>;
+
+// workgroup sizes: wgs.x, wgs.y, wgs.z
+const wgs = vec3({{workgroupSize}});
+
+@compute @workgroup_size({{workgroupSize}})
+fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
+    let i = lid.x + wgs.x * lid.y;
+    let i1 = i / arrayLength(&a); // int     of division -> results in staying in 0 while lid.y is 0, then 1 while lid.y is 1, etc, so it is like an outer loop
+    let i2 = i % arrayLength(&b); // modulo  of division -> acts like an inner loop: always varies between 0 and b length - 1 for every iteration of lid.x/lid.y
+    out[i] = a[i1] + b[i2];
+}
+
+// Example for clarity:
+// Input a  [  0  1  2  3 ]
+// Input b  [  0  1  2  3 ]
+
+// Output [  0  1  2  3  1  2  3  4  2  3  4  5  3  4  5  6 ]

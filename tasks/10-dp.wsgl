@@ -1,0 +1,24 @@
+// Dot Product
+// Implement a kernel that computes the dot-product of `a` and `b` and stores it in `out`. You have 1 thread per position.
+
+@group(0) @binding(0) var<storage, read_write> a : array<f32>;
+@group(0) @binding(1) var<storage, read_write> b : array<f32>;
+@group(0) @binding(2) var<storage, read_write> out : array<f32>;
+
+const wgs = vec3({{workgroupSize}});
+const twg = vec3({{totalWorkgroups}});
+var<workgroup> smem: array<f32, {{smemSize}}>;
+
+@compute @workgroup_size({{workgroupSize}})
+fn  main(@builtin(local_invocation_id) lid: vec3<u32>,
+         @builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = lid.x + lid.y * wgs.x;
+  smem[lid.x] = a[i] * b[i];
+  workgroupBarrier();
+  
+  if (gid.x == 0) { // for other threads, it will be ignored, hence, calculated only once. Not very efficient but easy to read
+    for (var i: u32=0; i < arrayLength(&a); i++) {
+      out[0] += smem[i];
+    }
+  }
+}

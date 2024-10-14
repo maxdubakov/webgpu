@@ -1,0 +1,21 @@
+// Blocks 2D
+// Implement the same kernel in 2D. You have fewer threads per block than the size of `a` in both directions.
+
+@group(0) @binding(0) var<storage, read_write> a : array<f32>;
+@group(0) @binding(1) var<storage, read_write> out : array<f32>;
+
+const wgs = vec3({{workgroupSize}}); // workgroup sizes
+const twg = vec3({{totalWorkgroups}}); // total workgroups
+
+@compute @workgroup_size({{workgroupSize}})
+fn main(@builtin(local_invocation_id) lid: vec3<u32>,
+        @builtin(global_invocation_id) gid: vec3<u32>,
+        @builtin(workgroup_id) wid: vec3<u32>) {
+  let wgSize: u32 = wgs.x * wgs.y * wgs.z; // number of threads per workgroup
+  let wg_i = wid.x + wid.y * twg.x; // "loop" over workgroups
+  let thread_i = lid.x + lid.y * wgs.x; // "loop" over threads
+  let i = thread_i + wg_i * wgSize;
+  if (i < arrayLength(&a)) {
+    out[i] = a[i] + 10;
+  }
+}

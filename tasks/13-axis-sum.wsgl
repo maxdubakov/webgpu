@@ -1,0 +1,27 @@
+// Axis sum
+// Implement a kernel that computes a sum over each column of `a` and stores it in `out`.
+
+@group(0) @binding(0) var<storage, read_write> a : array<f32>;
+@group(0) @binding(1) var<storage, read_write> out : array<f32>;
+
+const wgs = vec3({{workgroupSize}});
+const twg = vec3({{totalWorkgroups}});
+var<workgroup> smem: array<f32, {{smemSize}}>;
+
+@compute @workgroup_size({{workgroupSize}})
+fn main(@builtin(local_invocation_id) lid: vec3<u32>,
+        @builtin(global_invocation_id) gid: vec3<u32>,
+        @builtin(workgroup_id) wid: vec3<u32>) {
+  // wid.y range (0, 4), wgs.x range (0, 8)
+  let nRows: u32 = twg.y;
+  let nCols: u32 = arrayLength(&a) / nRows;
+  if (lid.x < nCols) {
+    smem[lid.x] = a[nCols * wid.y + lid.x];
+  }
+  workgroupBarrier();
+  if (lid.x == 0) {
+    for (var i: u32 = 0; i < nCols; i++) {
+      out[wid.y] += smem[i];
+    }
+  }
+}

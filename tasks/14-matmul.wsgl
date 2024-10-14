@@ -1,0 +1,62 @@
+// Matrix Multiply
+// Implement a kernel that multiplies square matrices `a` and `b` and stores the result in `out`. Optimize by using shared memory for partial dot-products.
+
+@group(0) @binding(0) var<storage, read_write> a: array<f32>;
+@group(0) @binding(1) var<storage, read_write> b: array<f32>;
+@group(0) @binding(2) var<storage, read_write> output: array<f32>;
+
+const wgs = vec3({{workgroupSize}});
+const twg = vec3({{totalWorkgroups}});
+const tileSize = vec3({{workgroupSize}});
+var<workgroup> a_shared: array<f32, 256>;
+var<workgroup> b_shared: array<f32, 256>;
+
+@compute @workgroup_size({{workgroupSize}})
+fn main(
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(global_invocation_id) gid: vec3<u32>,
+  @builtin(workgroup_id) wid: vec3<u32>) {
+    let N = u32(sqrt(f32(arrayLength(&a)))); // assume matrix are squares
+    let i = wid.x * wgs.x + lid.x; // row index
+    let j = wid.y * wgs.y + lid.y; // col index
+    let local_i = lid.x; // local row index
+    let local_j = lid.y; // local col index
+
+    var acc: f32 = 0.0;
+
+    for (var k: u32 = 0u; k < N; k = k + tileSize.x) {
+      // Load data into shared memory for matrix A
+      if (j < N && k + local_i < N) {
+        a_shared[local_j * tileSize.x + local_i] 
+        = a[j * N + (k + local_i)];
+      } else {
+        a_shared[local_j * tileSize.x + local_i] = 0.0;
+      }
+      
+      // Load data into shared memory for matrix B
+      if (i < N && k + local_j < N) {
+        b_shared[local_j * tileSize.x + local_i] 
+        = b[i + (k + local_j) * N];
+      } else {
+        b_shared[local_j * tileSize.x + local_i] = 0.0;
+      }
+
+      workgroupBarrier();
+
+      // Compute partial dot product for the current tile
+      let local_k_max = min(tileSize.x, N - k);
+      for (var local_k: u32 = 0u; 
+            local_k < local_k_max; 
+            local_k = local_k + 1u) {
+        acc += a_shared[local_j * tileSize.x + local_k] 
+          * b_shared[local_k * tileSize.x + local_i];
+      }
+
+      workgroupBarrier();
+    }
+
+    // Write the result to the output matrix
+    if (i < N && j < N) {
+      output[i + j * N] = acc;
+    }
+}

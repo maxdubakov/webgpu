@@ -1,0 +1,20 @@
+// Blocks
+// Implement a kernel that adds 10 to each position of `a` and stores it in `out`. You have fewer threads per block than the size of `a`.
+
+@group(0) @binding(0) var<storage, read_write> a : array<f32>;
+@group(0) @binding(1) var<storage, read_write> out : array<f32>;
+
+const wgs = vec3({{workgroupSize}}); // workgroup sizes
+const twg = vec3({{totalWorkgroups}}); // total workgroups
+
+@compute @workgroup_size({{workgroupSize}})
+fn main(@builtin(local_invocation_id) lid: vec3<u32>,
+        @builtin(global_invocation_id) gid: vec3<u32>,
+        @builtin(workgroup_id) wid: vec3<u32>) {
+  let i = (wid.x * wgs.x) + lid.x; // basically, it is a formula of an gid -- global thread id within a work-group (block)
+  // OR JUST
+  // let i = gid.x;
+  if (i < arrayLength(&a)) {
+    out[i] = a[i] + 10;
+  }
+}
